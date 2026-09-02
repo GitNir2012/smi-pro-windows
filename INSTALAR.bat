@@ -29,7 +29,7 @@ if not exist dados mkdir dados
 echo  Pasta de dados: %cd%\dados
 echo  Nao precisa pip. So a biblioteca padrao.
 echo.
-echo  Pronto. Agora de dois cliques em INICIAR.bat
+echo  Pronto. Agora dê dois cliques em INICIAR.bat
 echo  (e deixe a janela preta aberta enquanto gravar).
 echo.
 pause
