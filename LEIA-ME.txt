@@ -1,0 +1,38 @@
+SMI Pro 1.2 — gravador para o notebook (Windows 10)
+===================================================
+
+O que é
+  A mesma mesa da página web, agora completa:
+  mapa 1D/1H, zona M15, faixa das baleias (PDH/PDL/POC),
+  varredura, close GR, plano do dia (perda / meta / máx. entradas)
+  e stake baixo/médio/alto. Os dados FICAM NO DISCO.
+
+Como ligar (dois cliques)
+  1. INSTALAR.bat   — só na primeira vez (procura Python 3.8+)
+  2. INICIAR.bat    — toda vez que for gravar
+  O navegador abre sozinho na mesa local.
+  Deixe a janela preta aberta (pode minimizar).
+
+Python
+  Precisa Python 3.8 ou mais novo. Não usa pip, pandas nem nada extra.
+  Se o INSTALAR abrir o site da Python.org: baixe, marque
+  "Add python.exe to PATH", instale, rode INSTALAR de novo.
+
+O que fica gravado (pasta dados)
+  paper.json        banca, plano do dia e operações
+  papers.csv        para abrir no Excel
+  snapshots.jsonl   um registro a cada ciclo (fase, viés, baleia, GR)
+  eventos.log       texto simples do que aconteceu
+  config.json       ativo escolhido e paper automático
+
+Paper automático
+  Ligado por padrão: quando a fase vira "Setup pronto", registra
+  sozinho com o stake do peso (BAIXO/MÉDIO/ALTO), payout 80%,
+  15 min no M5. Uma ordem por vez. Para se bater perda, meta
+  ou o teto de entradas do dia.
+
+Deixe ligado
+  Pode minimizar a janela preta. Não feche. Internet precisa
+  ficar ligada (velas da Binance).
+
+Não é dinheiro real. É validação em papel, como combinamos.

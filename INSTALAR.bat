@@ -3,8 +3,8 @@ chcp 65001 >nul
 cd /d "%~dp0"
 title SMI Pro - instalar
 echo.
-echo  SMI Pro - checagem do Windows 10
-echo  --------------------------------
+echo  SMI Pro 1.2 - checagem do Windows 10
+echo  ------------------------------------
 echo.
 
 set PY=
@@ -29,7 +29,7 @@ if not exist dados mkdir dados
 echo  Pasta de dados: %cd%\dados
 echo  Nao precisa pip. So a biblioteca padrao.
 echo.
-echo  Pronto. Agora dê dois cliques em INICIAR.bat
+echo  Pronto. Agora de dois cliques em INICIAR.bat
 echo  (e deixe a janela preta aberta enquanto gravar).
 echo.
 pause
