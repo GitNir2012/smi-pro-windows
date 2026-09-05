@@ -64,6 +64,7 @@ def cycle() -> None:
             pack.get("1m") or [],
             journal.pending(),
             journal.book["trades"],
+            journal.day_session(),
         )
         journal.snapshot(desk, price)
         phase = desk["phase"]
@@ -87,6 +88,7 @@ def cycle() -> None:
                         pack.get("1m") or [],
                         journal.pending(),
                         journal.book["trades"],
+                        journal.day_session(),
                     )
         with lock:
             state["desk"] = desk
@@ -139,7 +141,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:8px 6px;t
 <header>
   <p class="subtle">SMI PRO · GRAVADOR WINDOWS · v__VERSION__</p>
   <h1>Um ativo. Um mapa. Um gatilho.</h1>
-  <p class="muted">Paper fictício gravado em disco (pasta dados). Mesmas regras da mesa web. Deixe esta janela aberta para registrar.</p>
+  <p class="muted">Paper fictício gravado em disco (pasta dados). v1.2 — mapa, baleia, GR, plano do dia. Deixe esta janela aberta.</p>
   <div class="row" style="margin-top:12px">
     <select id="asset"></select>
     <label class="muted"><input type="checkbox" id="auto"/> Paper automático no Setup pronto</label>
@@ -152,6 +154,24 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:8px 6px;t
   <p id="phase" style="font-size:1.6rem;margin:6px 0">Lendo mercado…</p>
   <p class="muted" id="reason"></p>
   <p class="subtle" id="price"></p>
+  <p class="subtle" id="whale"></p>
+  <p class="subtle" id="session"></p>
+</section>
+<section>
+  <h2>Plano do dia</h2>
+  <div class="row">
+    <label class="subtle">Perda <input id="loss" type="number" min="20" max="1000" step="10" style="width:90px;height:36px"/></label>
+    <label class="subtle">Meta
+      <select id="target" style="height:36px">
+        <option value="1.5">1,5×</option>
+        <option value="2">2×</option>
+        <option value="2.5">2,5×</option>
+        <option value="3">3×</option>
+      </select>
+    </label>
+    <label class="subtle">Máx. entradas <input id="maxT" type="number" min="3" max="12" style="width:70px;height:36px"/></label>
+    <button id="savePlan">Salvar plano</button>
+  </div>
 </section>
 <section>
   <h2>Mapa</h2>
@@ -186,7 +206,14 @@ function paint(s){
   document.getElementById('phase').textContent = d? d.phaseLabel : (s.loading?'Lendo mercado…':'Sem dados');
   document.getElementById('reason').textContent = d? d.waitReason : (s.error||'');
   document.getElementById('price').textContent = (s.price!=null? s.price+' USDT · ':'')+(s.error||'');
-  document.getElementById('map').textContent = d? ('1D '+d.d1.bias+' · 1H '+d.h1.bias+' · M15 '+d.m15.bias+' · lado '+d.allowed) : '—';
+  document.getElementById('whale').textContent = d && d.whale ? d.whale.label : '';
+  const ses = s.session || {};
+  document.getElementById('session').textContent = ses.date ? ('Hoje '+ses.date+' · PnL '+ses.pnl+' · entradas '+ses.trades+(ses.halted?' · '+ses.reason:'')) : '';
+  const plan = (b.plan||{});
+  document.getElementById('loss').value = plan.lossLimit||100;
+  document.getElementById('target').value = String(plan.targetX||2);
+  document.getElementById('maxT').value = plan.maxTrades||7;
+  document.getElementById('map').textContent = d? ('1D '+d.d1.bias+' · 1H '+d.h1.bias+' · M15 '+d.m15.bias+' · lado '+d.allowed+(d.conviction? ' · '+d.conviction:'')) : '—';
   document.getElementById('check').innerHTML = (d?d.checklist:[]).map(i=>'<li class="'+(i.ok?'ok':'no')+'">'+(i.ok?'✓':'○')+' '+i.label+' <span class="subtle">'+i.layer+'</span></li>').join('');
   document.getElementById('bank').textContent = (b.bank).toFixed(2);
   document.getElementById('stats').textContent = st.n? (st.n+' papers · winrate '+(st.wr*100).toFixed(0)+'% · '+st.wins+'W '+st.losses+'L') : 'Nenhum paper ainda';
@@ -200,6 +227,7 @@ sel.onchange=()=>j('/api/symbol',{symbol:sel.value}).then(tick);
 document.getElementById('auto').onchange=e=>j('/api/config',{autoPaper:e.target.checked});
 document.getElementById('paper').onclick=()=>j('/api/paper',{}).then(tick);
 document.getElementById('reset').onclick=()=>{if(confirm('Zerar banca paper?'))j('/api/reset',{}).then(tick);};
+document.getElementById('savePlan').onclick=()=>j('/api/plan',{lossLimit:Number(document.getElementById('loss').value),targetX:Number(document.getElementById('target').value),maxTrades:Number(document.getElementById('maxT').value)}).then(tick);
 tick(); setInterval(tick,4000);
 </script>
 </body></html>
@@ -258,6 +286,7 @@ class Handler(BaseHTTPRequestHandler):
                     "price": state["price"],
                     "heat": state["heat"],
                     "version": VERSION,
+                    "session": journal.day_session(),
                 }
             self._json(payload)
             return
@@ -303,6 +332,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/reset":
             journal.reset_book()
             self._json({"ok": True})
+            return
+        if path == "/api/plan":
+            plan = journal.set_plan(body)
+            self._json({"ok": True, "plan": plan})
             return
         self._json({"error": "not found"}, 404)
 

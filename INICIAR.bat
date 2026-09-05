@@ -10,7 +10,7 @@ if not defined PY (
   pause
   exit /b 1
 )
-echo Abrindo a mesa SMI Pro 1.2...
+echo Abrindo a mesa SMI Pro...
 echo Deixe esta janela aberta. Fechar = parar o gravador.
 echo.
 if exist SMI-Pro.py (

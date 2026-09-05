@@ -3,14 +3,49 @@ from __future__ import annotations
 import csv
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-DEFAULT_BOOK = {"bank": 1000.0, "riskPct": 1.0, "payout": 0.8, "trades": []}
+DEFAULT_PLAN = {"lossLimit": 100.0, "targetX": 2.0, "maxTrades": 7}
+DEFAULT_BOOK = {
+    "bank": 1000.0,
+    "riskPct": 1.0,
+    "payout": 0.8,
+    "trades": [],
+    "plan": dict(DEFAULT_PLAN),
+}
+SP = timezone(timedelta(hours=-3))
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def sp_date(ts_ms: int) -> str:
+    return datetime.fromtimestamp(ts_ms / 1000, SP).strftime("%Y-%m-%d")
+
+
+def sanitize_plan(raw: Any) -> Dict[str, Any]:
+    p = raw if isinstance(raw, dict) else {}
+    try:
+        loss = float(p.get("lossLimit", 100))
+    except (TypeError, ValueError):
+        loss = 100.0
+    try:
+        tx = float(p.get("targetX", 2))
+    except (TypeError, ValueError):
+        tx = 2.0
+    try:
+        mx = int(p.get("maxTrades", 7))
+    except (TypeError, ValueError):
+        mx = 7
+    if tx not in (1.5, 2.0, 2.5, 3.0):
+        tx = 2.0
+    return {
+        "lossLimit": min(1000.0, max(20.0, loss)),
+        "targetX": tx,
+        "maxTrades": min(12, max(3, mx)),
+    }
 
 
 class Journal:
@@ -49,6 +84,7 @@ class Journal:
             data.setdefault("riskPct", 1.0)
             data.setdefault("payout", 0.8)
             data.setdefault("trades", [])
+            data["plan"] = sanitize_plan(data.get("plan"))
             return data
         except Exception:
             return json.loads(json.dumps(DEFAULT_BOOK))
@@ -58,10 +94,16 @@ class Journal:
             json.dump(self.book, f, indent=2, ensure_ascii=False)
         self._write_csv()
 
+    def set_plan(self, partial: Dict[str, Any]) -> Dict[str, Any]:
+        cur = self.book.get("plan") or {}
+        self.book["plan"] = sanitize_plan({**cur, **partial})
+        self.save_book()
+        return self.book["plan"]
+
     def _write_csv(self) -> None:
         fields = [
             "id", "ts", "iso", "symbol", "side", "entry", "exit", "stake",
-            "expiryMin", "triggerTf", "hourUtc", "result", "pnl", "phaseNote",
+            "expiryMin", "triggerTf", "hourUtc", "result", "pnl", "conviction", "phaseNote",
         ]
         with open(self.csv_path, "w", encoding="utf-8", newline="") as f:
             w = csv.DictWriter(f, fieldnames=fields)
@@ -90,8 +132,11 @@ class Journal:
             "h1": desk.get("h1", {}).get("bias"),
             "m15": desk.get("m15", {}).get("bias"),
             "zone": desk.get("zone", {}).get("inZone"),
+            "whale": desk.get("whale", {}).get("inBand"),
             "sweep": desk.get("sweep", {}).get("swept"),
             "confirmed": desk.get("confirmed"),
+            "grClose": desk.get("grClose"),
+            "conviction": desk.get("conviction"),
             "boosters": desk.get("boosters"),
         }
         with open(self.snap_path, "a", encoding="utf-8") as f:
@@ -103,16 +148,65 @@ class Journal:
                 return t
         return None
 
-    def stake(self) -> float:
-        raw = (float(self.book["bank"]) * float(self.book["riskPct"])) / 100.0
-        return max(5.0, min(50.0, round(raw, 2)))
+    def day_session(self, now_ms: Optional[int] = None) -> Dict[str, Any]:
+        plan = sanitize_plan(self.book.get("plan"))
+        if now_ms is None:
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        date = sp_date(now_ms)
+        today = [t for t in self.book["trades"] if sp_date(int(t.get("ts") or 0)) == date]
+        done = [t for t in today if t.get("result") != "PENDING"]
+        pnl = sum(float(t.get("pnl") or 0) for t in done)
+        wins = sum(1 for t in done if t.get("result") == "WIN")
+        losses = sum(1 for t in done if t.get("result") == "LOSS")
+        target = plan["lossLimit"] * plan["targetX"]
+        remaining_trades = max(0, plan["maxTrades"] - len(today))
+        remaining_loss = max(0.0, plan["lossLimit"] + min(0.0, pnl))
+        remaining_target = max(0.0, target - pnl)
+        halted = False
+        reason = None
+        if pnl <= -plan["lossLimit"] + 1e-9:
+            halted = True
+            reason = "Limite de perda do dia (R$ %.0f) atingido. Parar." % plan["lossLimit"]
+        elif pnl >= target - 1e-9:
+            halted = True
+            reason = "Meta do dia (%.1f× = R$ %.0f) atingida. Parar." % (plan["targetX"], target)
+        elif len(today) >= plan["maxTrades"]:
+            halted = True
+            reason = "Máximo de %s entradas no dia. Parar." % plan["maxTrades"]
+        return {
+            "date": date,
+            "trades": len(today),
+            "pnl": round(pnl, 2),
+            "wins": wins,
+            "losses": losses,
+            "halted": halted,
+            "reason": reason,
+            "remainingLoss": round(remaining_loss, 2),
+            "remainingTarget": round(remaining_target, 2),
+            "remainingTrades": remaining_trades,
+            "targetProfit": target,
+            "plan": plan,
+        }
+
+    def stake(self, conviction: Optional[str] = "MEDIO") -> float:
+        plan = sanitize_plan(self.book.get("plan"))
+        payout = float(self.book.get("payout") or 0.8) or 0.8
+        even = plan["lossLimit"] / plan["maxTrades"]
+        goal = (plan["lossLimit"] * plan["targetX"]) / (plan["maxTrades"] * payout)
+        key = conviction if conviction in ("BAIXO", "MEDIO", "ALTO") else "MEDIO"
+        raw = even if key == "BAIXO" else goal if key == "ALTO" else (even + goal) / 2
+        session = self.day_session()
+        cap = min(session["remainingLoss"], max(5.0, session["remainingTarget"]))
+        return max(5.0, min(cap, round(raw, 2)))
 
     def open_paper(self, desk: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if desk.get("phase") != "READY" or desk.get("allowed") == "NONE":
             return None
         if self.pending():
             return None
-        stake = self.stake()
+        if self.day_session().get("halted"):
+            return None
+        stake = self.stake(desk.get("conviction"))
         if self.book["bank"] < stake:
             return None
         last = desk.get("m5" if desk.get("triggerTf") != "1m" else "m1", {}).get("last") or {}
@@ -126,14 +220,17 @@ class Journal:
             "expiryMin": 5 if desk.get("triggerTf") == "1m" else 15,
             "triggerTf": desk.get("triggerTf") or "5m",
             "hourUtc": desk.get("hourUtc"),
-            "phaseNote": desk.get("waitReason"),
+            "phaseNote": "%s · %s" % (desk.get("conviction") or "MEDIO", desk.get("waitReason")),
             "result": "PENDING",
+            "conviction": desk.get("conviction"),
         }
         self.book["bank"] = round(self.book["bank"] - stake, 2)
         self.book["trades"] = [trade] + self.book["trades"]
         self.book["trades"] = self.book["trades"][:2000]
         self.save_book()
-        self.log("PAPER %s %s @ %s" % (trade["side"], trade["symbol"], trade["entry"]))
+        self.log("PAPER %s %s %s @ %s stake=%s" % (
+            trade["side"], trade["symbol"], trade.get("conviction"), trade["entry"], stake
+        ))
         return trade
 
     def settle(self, last_price: float) -> Optional[Dict[str, Any]]:
@@ -174,6 +271,8 @@ class Journal:
         return {"n": len(done), "wins": wins, "losses": losses, "wr": wr, "ev": ev}
 
     def reset_book(self) -> None:
+        plan = sanitize_plan(self.book.get("plan"))
         self.book = json.loads(json.dumps(DEFAULT_BOOK))
+        self.book["plan"] = plan
         self.save_book()
         self.log("paper zerado")
