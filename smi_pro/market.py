@@ -63,7 +63,7 @@ def fetch_one(symbol: str, interval: str, limit: int = 60) -> List[Dict[str, flo
 def fetch_pack(symbol: str) -> Dict[str, List[Dict[str, float]]]:
     pack = {}
     failed = []
-    limits = {"1d": 80, "1h": 60, "15m": 60, "5m": 60, "1m": 60}
+    limits = {"1d": 80, "1h": 60, "15m": 60, "5m": 300, "1m": 60}
     for tf in INTERVALS:
         try:
             pack[tf] = fetch_one(symbol, tf, limits.get(tf, 60))

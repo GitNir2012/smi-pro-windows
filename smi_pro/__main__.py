@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from . import VERSION
 from .engine import ASSETS, evaluate_desk, hour_heatmap
 from .journal import Journal
-from .market import fetch_pack
+from .grlog import summarize, walk_gr
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "dados")
@@ -31,6 +31,7 @@ state: Dict[str, Any] = {
     "price": None,
     "heat": hour_heatmap([]),
     "alive": True,
+    "gr": None,
 }
 last_ready_key = ""
 last_phase = ""
@@ -67,6 +68,9 @@ def cycle() -> None:
             journal.day_session(),
         )
         journal.snapshot(desk, price)
+        fresh = walk_gr(symbol, pack.get("5m") or [])
+        gr_signals = journal.merge_gr(fresh)
+        gr_book = summarize(symbol, gr_signals)
         phase = desk["phase"]
         if phase != last_phase:
             push_log("fase %s → %s (%s)" % (last_phase or "—", phase, symbol))
@@ -97,6 +101,7 @@ def cycle() -> None:
             state["lastFetch"] = int(time.time() * 1000)
             state["price"] = price
             state["heat"] = hour_heatmap(journal.book["trades"])
+            state["gr"] = gr_book
     except Exception as e:
         with lock:
             state["error"] = str(e)
@@ -174,6 +179,13 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:8px 6px;t
   </div>
 </section>
 <section>
+  <h2>Caderno GR · só medição</h2>
+  <p class="muted" id="grCycle">Aguardando mercado…</p>
+  <div style="overflow:auto"><table><thead><tr><th>Bloco</th><th>Setas</th><th>Janela</th><th>W</th><th>L</th><th>Erros</th></tr></thead><tbody id="grSess"></tbody></table></div>
+  <div style="overflow:auto;margin-top:8px"><table><thead><tr><th>Quando</th><th>Tipo</th><th>Lado</th><th>3</th><th>4</th><th>Ciclo</th><th>Se operasse</th></tr></thead><tbody id="grRows"></tbody></table></div>
+  <p class="subtle">Não entra no SMI. Sem martingale. ERRO = velas 3 e 4 contra. Depois, 3 setas na janela. Blocos 07/12/18/22.</p>
+</section>
+<section>
   <h2>Mapa</h2>
   <p id="map" class="muted"></p>
   <ul id="check" style="list-style:none;padding:0"></ul>
@@ -191,7 +203,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:8px 6px;t
 <section>
   <h2>Log</h2>
   <pre id="log"></pre>
-  <p class="subtle">Arquivos: dados/paper.json · dados/papers.csv · dados/snapshots.jsonl · dados/eventos.log</p>
+  <p class="subtle">Arquivos: dados/paper.json · dados/papers.csv · dados/snapshots.jsonl · dados/eventos.log · dados/gr.json</p>
 </section>
 </main>
 <script>
@@ -221,6 +233,15 @@ function paint(s){
   const rows=(b.trades||[]).slice(0,15).map(t=>'<tr><td>'+new Date(t.ts).toLocaleString('pt-BR')+'</td><td>'+t.symbol.replace('USDT','')+'</td><td class="'+(t.side==='CALL'?'call':'put')+'">'+t.side+'</td><td>'+t.result+'</td><td>'+(t.pnl==null?'—':t.pnl.toFixed(2))+'</td></tr>').join('');
   document.getElementById('rows').innerHTML = rows || '<tr><td colspan="5" class="muted">Nenhum paper ainda. Espere o filme completo.</td></tr>';
   document.getElementById('log').textContent = (s.log||[]).slice(-20).join('\n');
+  const g=s.gr;
+  if(g){
+    document.getElementById('grCycle').textContent = 'Hoje '+g.day+' · '+(g.cycle==='WINDOW'?('janela '+g.remaining+'/3'):'aguardando ERRO')+' · '+(g.signals||[]).length+' setas · '+(g.errors||0)+' erros'+(g.windowWr!=null?(' · janela '+(g.windowWr*100).toFixed(0)+'%'):'');
+    document.getElementById('grSess').innerHTML = (g.sessions||[]).filter(x=>x.id!=='fora'||x.signals).map(x=>'<tr><td>'+x.id+'h</td><td>'+x.signals+'</td><td>'+x.window+'</td><td>'+x.wins+'</td><td>'+x.losses+'</td><td>'+x.errors+'</td></tr>').join('');
+    document.getElementById('grRows').innerHTML = (g.signals||[]).slice(0,16).map(t=>{
+      const hh=new Date(t.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+      return '<tr><td>'+hh+' '+t.session+'h</td><td>'+t.kind+'</td><td class="'+(t.side==='CALL'?'call':'put')+'">'+t.side+'</td><td>'+(t.c3?(t.c3.match?'ok':'contra'):'—')+'</td><td>'+(t.c4?(t.c4.match?'ok':'contra'):'—')+'</td><td>'+(t.error?'ERRO':t.inWindow?'janela':'fora')+'</td><td>'+t.takeResult+'</td></tr>';
+    }).join('') || '<tr><td colspan="7" class="muted">Sem seta GR ainda.</td></tr>';
+  }
 }
 async function tick(){try{paint(await j('/api/state'));}catch(e){}}
 sel.onchange=()=>j('/api/symbol',{symbol:sel.value}).then(tick);
@@ -287,6 +308,7 @@ class Handler(BaseHTTPRequestHandler):
                     "heat": state["heat"],
                     "version": VERSION,
                     "session": journal.day_session(),
+                    "gr": state.get("gr"),
                 }
             self._json(payload)
             return

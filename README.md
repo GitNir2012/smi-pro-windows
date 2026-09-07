@@ -1,4 +1,4 @@
-# SMI Pro 1.2.1 — Windows
+# SMI Pro 1.3 — Windows
 
 Gravador local (Python 3.8+, só biblioteca padrão).
 

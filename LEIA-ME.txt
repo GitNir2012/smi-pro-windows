@@ -38,7 +38,14 @@ O que fica gravado (pasta dados)
   snapshots.jsonl   um registro a cada ciclo (fase, viés, baleia, GR)
   eventos.log       texto simples do que aconteceu
   vigia.log         cada checagem do agendamento
+  gr.json           caderno GR (seta, vela 3/4, ciclo após erro)
   config.json       ativo escolhido e paper automático
+
+Caderno GR
+  Só medição. Não opera e não dobra stake.
+  Seta na vela 1 → cor da 3 e da 4. ERRO = 3 e 4 contra.
+  Depois do erro, 3 setas na janela. Blocos 07h, 12h, 18h, 22h (São Paulo).
+  Conservador ~3 por bloco, agressivo ~5. Fora disso o caderno marca "passou".
 
 Paper automático
   Ligado por padrão: quando a fase vira "Setup pronto", registra

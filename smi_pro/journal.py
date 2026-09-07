@@ -57,8 +57,10 @@ class Journal:
         self.snap_path = os.path.join(root, "snapshots.jsonl")
         self.log_path = os.path.join(root, "eventos.log")
         self.cfg_path = os.path.join(root, "config.json")
+        self.gr_path = os.path.join(root, "gr.json")
         self.book = self._load_book()
         self.config = self._load_cfg()
+        self.gr_signals = self._load_gr()
 
     def _load_cfg(self) -> Dict[str, Any]:
         cfg = {"symbol": "SOLUSDT", "autoPaper": True}
@@ -69,6 +71,32 @@ class Journal:
             except Exception:
                 pass
         return cfg
+
+    def _load_gr(self) -> List[Dict[str, Any]]:
+        if not os.path.exists(self.gr_path):
+            return []
+        try:
+            with open(self.gr_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
+    def save_gr(self, signals: List[Dict[str, Any]]) -> None:
+        self.gr_signals = signals[:800]
+        with open(self.gr_path, "w", encoding="utf-8") as f:
+            json.dump(self.gr_signals, f, ensure_ascii=False)
+
+    def merge_gr(self, fresh: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        from .grlog import replay_cycle
+        mapped = {s["id"]: s for s in self.gr_signals}
+        for s in fresh:
+            old = mapped.get(s["id"])
+            if not old or (s.get("settled") and not old.get("settled")) or (s.get("c4") and not old.get("c4")):
+                mapped[s["id"]] = s
+        out = replay_cycle(list(mapped.values()))[:800]
+        self.save_gr(out)
+        return out
 
     def save_cfg(self) -> None:
         with open(self.cfg_path, "w", encoding="utf-8") as f:
