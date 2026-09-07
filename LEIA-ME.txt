@@ -1,5 +1,5 @@
-SMI Pro 1.2 — gravador para o notebook (Windows 10)
-===================================================
+SMI Pro 1.2.1 — gravador para o notebook (Windows 10)
+====================================================
 
 O que é
   A mesma mesa da página web, agora completa:
@@ -13,16 +13,31 @@ Como ligar (dois cliques)
   O navegador abre sozinho na mesa local.
   Deixe a janela preta aberta (pode minimizar).
 
+Religar sozinho (recomendado)
+  3. CRIAR-AGENDAMENTO.bat  — uma vez
+     O Windows, de hora em hora (e ao ligar o PC), confere se o
+     SMI está no ar. Se o Kaspersky, uma atualização ou um reboot
+     tiver derrubado, o vigia coloca de volta.
+  4. PARAR-AGENDAMENTO.bat  — quando não quiser mais histórico
+     Só remove o agendamento. O gravador que já estiver aberto
+     continua até você fechar a janela preta.
+
 Python
   Precisa Python 3.8 ou mais novo. Não usa pip, pandas nem nada extra.
   Se o INSTALAR abrir o site da Python.org: baixe, marque
   "Add python.exe to PATH", instale, rode INSTALAR de novo.
+
+Kaspersky / antivírus
+  Se o gravador "some" sozinho, adicione esta pasta do SMI e o
+  python.exe nas exclusões. Sem isso o vigia religa e o antivírus
+  derruba de novo.
 
 O que fica gravado (pasta dados)
   paper.json        banca, plano do dia e operações
   papers.csv        para abrir no Excel
   snapshots.jsonl   um registro a cada ciclo (fase, viés, baleia, GR)
   eventos.log       texto simples do que aconteceu
+  vigia.log         cada checagem do agendamento
   config.json       ativo escolhido e paper automático
 
 Paper automático
@@ -30,9 +45,5 @@ Paper automático
   sozinho com o stake do peso (BAIXO/MÉDIO/ALTO), payout 80%,
   15 min no M5. Uma ordem por vez. Para se bater perda, meta
   ou o teto de entradas do dia.
-
-Deixe ligado
-  Pode minimizar a janela preta. Não feche. Internet precisa
-  ficar ligada (velas da Binance).
 
 Não é dinheiro real. É validação em papel, como combinamos.

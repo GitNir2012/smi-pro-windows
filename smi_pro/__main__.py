@@ -342,6 +342,12 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     os.makedirs(DATA, exist_ok=True)
+    pid_path = os.path.join(DATA, "smi.pid")
+    try:
+        with open(pid_path, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
     worker = threading.Thread(target=loop, daemon=True)
     worker.start()
     httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
@@ -350,15 +356,23 @@ def main() -> None:
     print("Mesa: %s" % url)
     print("Dados: %s" % DATA)
     print("Deixe esta janela aberta. Feche para parar o gravador.")
-    try:
-        webbrowser.open(url)
-    except Exception:
-        pass
+    silent = os.environ.get("SMI_SILENT", "").strip() in ("1", "true", "yes")
+    if not silent:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         state["alive"] = False
         httpd.shutdown()
+    finally:
+        try:
+            if os.path.exists(pid_path):
+                os.remove(pid_path)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
